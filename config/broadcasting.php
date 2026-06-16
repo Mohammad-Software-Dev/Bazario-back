@@ -61,7 +61,8 @@ return [
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
-                'verify' => env('PUSHER_CA_CERT_PATH', true),
+                'verify' => 'C:/wamp64/bin/php/php8.3.14/extras/ssl/cacert.pem',
+               //'verify' => false,
             ],
         ],
 
