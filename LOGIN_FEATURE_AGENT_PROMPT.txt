@@ -1,0 +1,246 @@
+You are working on a new frontend project for the Bazario backend.
+
+Context:
+- The frontend stack is Vite + React + TypeScript + Tailwind CSS + shadcn/ui.
+- This is a fresh frontend, separate from the Laravel app.
+- The backend already exists and should be treated as the source of truth.
+- Do not use Redux unless there is a clear need. Prefer React Query for server state.
+- Use clean feature-oriented architecture.
+- Keep the codebase professional: strong separation of concerns, typed contracts, no ad hoc state, no duplicated auth logic.
+
+Your task:
+Implement the first production-quality auth feature: login entry flow with header integration and register navigation.
+
+High-level behavior:
+1. There should be a main layout with a header.
+2. The header must show a `Login` button when the user is logged out.
+3. The header must show a `Logout` button when the user is logged in.
+4. Clicking `Login` should open a UI containing a login form.
+5. The login form should include the required backend fields.
+6. Under the form, show a text action:
+   `Don't have an account yet? Register`
+7. Clicking that action should navigate to the register page.
+8. Login must be fully wired:
+   - UI
+   - form validation
+   - API call
+   - TypeScript types
+   - auth token handling
+   - logged-in state
+   - logout behavior
+
+Important architectural direction:
+- Do not just build a visual form.
+- Build this as a complete vertical slice.
+- Keep feature code inside the auth feature unless it is truly app-wide infrastructure.
+- Keep the API layer separate from page components.
+- Keep backend response types explicit.
+- Keep auth token handling centralized.
+- Keep app-shell concerns separate from auth feature concerns.
+- Use React Query for mutations and any current-user fetch if needed.
+- Use react-hook-form + zod for form handling and validation.
+- Use React Router for navigation.
+- Use shadcn/ui components where appropriate.
+
+Architecture boundary rules:
+- `src/features/auth/**` should contain auth-specific UI, hooks, schemas, API functions, and types.
+- `src/layouts/**` and `src/components/shared/**` should contain reusable app-shell concerns like the header and layout wrappers.
+- `src/lib/api/**` should contain shared HTTP client infrastructure, not feature-specific request functions.
+- `src/lib/auth/**` can contain token persistence and auth-session helpers that are app-wide.
+- The header should consume auth state, but should not own raw login request logic.
+- The login dialog/modal/sheet can live under `src/features/auth/components/**` and be rendered from the header.
+
+Backend contract to match:
+
+Login endpoint:
+- Method: `POST`
+- URL: `/api/login`
+- Request body:
+  - `email: string`
+  - `password: string`
+
+Login validation rules from backend:
+- `email` is required and must be a valid email
+- `password` is required and must be a string
+
+Login success response envelope:
+- `success: 1`
+- `message: string`
+- `result: { token: string; user: User; roles: string[] }`
+
+Login failure response envelope:
+- `success: 0`
+- `message: string`
+- `result: unknown`
+- HTTP status is `401` for invalid credentials
+
+Notes:
+- The backend uses Laravel Sanctum bearer tokens.
+- The frontend should store the token and send it in the `Authorization: Bearer <token>` header for protected requests.
+
+Register endpoint:
+- Method: `POST`
+- URL: `/api/register`
+- Request body:
+  - `name: string` required
+  - `age: number | null`
+  - `email: string` required
+  - `phone: string | null`
+  - `password: string` required
+
+Register validation rules from backend:
+- `name`: required, string, max 255
+- `age`: nullable, integer, min 12, max 100
+- `email`: required, valid email, unique
+- `phone`: nullable, string, unique
+- `password`: required, string, min 6
+
+Register success response envelope:
+- `success: 1`
+- `message: string`
+- `result: { token: string; token_type: "Bearer"; user: User; roles: string[] }`
+
+Register validation failure envelope:
+- `success: 0`
+- `message: string`
+- `result.errors` contains field validation errors
+- HTTP status is `422`
+
+User model fields relevant to frontend:
+- `id`
+- `name`
+- `email`
+- `phone`
+- `age`
+- plus any standard timestamps if returned by backend
+
+Role values to expect:
+- `customer`
+- `seller`
+- `service_provider`
+- `admin`
+
+Recommended implementation approach:
+
+1. Inspect the current frontend project structure and adapt to it.
+2. If app architecture is still minimal, introduce a clear structure similar to:
+   - `src/app`
+   - `src/app/providers`
+   - `src/app/router`
+   - `src/layouts`
+   - `src/components/shared`
+   - `src/lib/api`
+   - `src/lib/auth`
+   - `src/features/auth/api`
+   - `src/features/auth/components`
+   - `src/features/auth/hooks`
+   - `src/features/auth/pages`
+   - `src/features/auth/schemas`
+   - `src/features/auth/types`
+
+3. Create or refine a shared API client:
+   - base URL from `import.meta.env`
+   - JSON requests
+   - centralized auth header support
+   - support the backend response envelope cleanly
+
+4. Create auth-related types:
+   - `ApiSuccessResponse<T>`
+   - `ApiErrorResponse`
+   - `User`
+   - `Role`
+   - `LoginPayload`
+   - `LoginResponse`
+   - `RegisterPayload`
+   - `RegisterResponse`
+
+5. Create token storage helpers:
+   - get token
+   - set token
+   - clear token
+   - avoid hardcoding storage access throughout components
+
+6. Create auth state handling:
+   - enough to know if the user is logged in
+   - enough to show `Login` or `Logout` in the header
+   - enough to expose the current user and roles to the app
+   - keep this in a predictable app-level provider, store, or context
+   - do not bury auth session state inside the header component itself
+
+7. Build the header behavior:
+   - logged out => `Login`
+   - logged in => `Logout`
+   - `Login` opens a dialog, sheet, modal, or other clean auth surface
+   - choose one and keep it coherent with shadcn/ui
+   - keep the header itself lean; it should trigger auth UI, not contain all auth logic inline
+
+8. Build the login form:
+   - email field
+   - password field
+   - validation messages
+   - loading state on submit
+   - server error handling
+   - success handling
+   - parse and use the backend response envelope correctly
+
+9. Add the register navigation action beneath login:
+   - text-only style is fine
+   - should navigate to `/register`
+
+10. Build the register page scaffold:
+   - at minimum, a route and page shell the login flow can navigate to
+   - if time allows, fully implement the register form too
+   - keep register implementation in the same auth feature, not in generic shared folders
+
+11. Build logout:
+   - ideally call backend `POST /api/logout`
+   - clear local auth state even if logout request fails after token becomes unusable
+
+12. Make the header update immediately when auth state changes.
+
+Technical expectations:
+- Use TypeScript strictly; avoid `any`.
+- Keep query/mutation logic out of page JSX where possible.
+- Keep form schemas separate from raw component markup if that improves clarity.
+- Handle loading, success, and error states explicitly.
+- Do not hardcode URLs directly in components.
+- Keep UI accessible.
+- Avoid oversized components; split layout, form, mutation hook, and API contract concerns appropriately.
+- Prefer naming that makes ownership obvious, for example `authApi.ts`, `useLoginMutation.ts`, `login-schema.ts`, `auth-session.ts`.
+
+Preferred libraries and patterns:
+- `react-router-dom`
+- `@tanstack/react-query`
+- `axios`
+- `react-hook-form`
+- `zod`
+- `@hookform/resolvers/zod`
+- shadcn/ui components
+
+Expected deliverables:
+- header integrated into layout
+- auth-aware login/logout button behavior
+- login modal/dialog/sheet UI
+- working login API integration
+- token persistence
+- register navigation
+- register route/page shell
+- centralized auth types and helpers
+- response-envelope-aware API typing
+- clean code organization
+
+If you need to make minor architecture decisions, choose the simplest maintainable option.
+
+Do not:
+- add Redux
+- scatter auth logic across unrelated components
+- hardcode backend response shapes without typing them
+- build fake UI disconnected from the backend contract
+- put app-shell components like the main header inside the auth feature
+- make the header component responsible for API calls directly if that can be avoided through hooks/components
+
+When finished, provide:
+1. a short summary of what was implemented
+2. the main files added or changed
+3. any assumptions made about backend response shape beyond the contract above
+4. any follow-up recommendation for the next auth step, such as protected routes or full registration implementation
