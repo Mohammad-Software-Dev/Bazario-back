@@ -28,6 +28,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ConnectAccountController;
 use App\Http\Controllers\Api\Admin\PlatformSettingsController;
 use App\Http\Controllers\Api\Admin\PayoutController;
+use App\Http\Controllers\ProfileController;
 
 Route::middleware(['set-language', 'throttle:api'])->group(function () {
 
@@ -72,6 +73,10 @@ Route::middleware(['set-language', 'throttle:api'])->group(function () {
         Route::post('logout-all', [LoginController::class, 'logoutAll']);
 
         Route::post('update-password', [PasswordUpdateController::class, 'update']);
+        Route::get('me', [ProfileController::class, 'show']);
+        Route::get('me/orders', [OrderController::class, 'myOrders']);
+        Route::get('me/sales', [OrderController::class, 'mySales']);
+        Route::get('me/provider-bookings', [ServiceBookingController::class, 'providerBookings']);
 
         Route::prefix('connect')->group(function () {
             Route::post('/onboard', [ConnectAccountController::class, 'start']);

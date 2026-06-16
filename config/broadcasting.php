@@ -60,9 +60,8 @@ return [
                 'useTLS' => env('PUSHER_SCHEME', 'https') === 'https',
             ],
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
-                'verify' => 'C:/wamp64/bin/php/php8.3.14/extras/ssl/cacert.pem',
-               //'verify' => false,
+                // Allow the platform CA bundle to be used unless explicitly overridden.
+                'verify' => filter_var(env('PUSHER_VERIFY', true), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true,
             ],
         ],
 
