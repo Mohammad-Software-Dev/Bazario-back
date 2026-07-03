@@ -50,6 +50,7 @@ Route::middleware(['set-language', 'throttle:api'])->group(function () {
     Route::get('service_providers', [ServiceProviderController::class, 'index']);
     Route::get('categories', [CategoryController::class, 'index']);
     Route::get('products', [ProductController::class, 'index']);
+    Route::get('products/{product}', [ProductController::class, 'show']);
     Route::get('services', [ServiceController::class, 'index']);
     Route::get('ads/timed', [AdController::class, 'timedAds']);
 
@@ -123,8 +124,6 @@ Route::middleware(['set-language', 'throttle:api'])->group(function () {
 
         Route::get('/customers', [CustomerController::class, 'index']);
 
-
-        Route::get('products/{id}', [ProductController::class, 'productsBySeller']);
 
         Route::middleware(['role:admin|seller|service_provider'])->group(function () {
             Route::post('categories', [CategoryController::class, 'store']);

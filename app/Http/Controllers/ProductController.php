@@ -8,10 +8,10 @@ use App\Models\Product;
 use App\Models\Seller;
 use App\Traits\ApiResponseTrait;
 
-
 class ProductController extends Controller
 {
     use ApiResponseTrait;
+
     public function index()
     {
         $perPage = max(1, min((int) request('per_page', 20), 50));
@@ -31,6 +31,18 @@ class ProductController extends Controller
         $products = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return $this->successResponse($products, 'messages', 'products_retrieved_successfully');
+    }
+
+    public function show(Product $product)
+    {
+        $product->load([
+            'images:id,product_id,image',
+            'category:id,name',
+            'seller.user:id,name,email,phone',
+            'seller:id,user_id,store_name,store_owner_name,logo,address,description',
+        ]);
+
+        return $this->successResponse($product, 'messages', 'products_retrieved_successfully');
     }
 
     public function myProducts()
