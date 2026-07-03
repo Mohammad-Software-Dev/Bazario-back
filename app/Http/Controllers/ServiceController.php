@@ -14,6 +14,8 @@ class ServiceController extends Controller
     use ApiResponseTrait;
     public function index()
     {
+        $perPage = max(1, min((int) request('per_page', 20), 50));
+
         $query = Service::with([
             'images:id,service_id,image',
             'category:id,name',
@@ -26,7 +28,7 @@ class ServiceController extends Controller
             $query->where('category_id', request('category_id'));
         }
 
-        $services = $query->orderBy('created_at', 'desc')->paginate(20);
+        $services = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return $this->successResponse($services, 'messages', 'services_retrieved_successfully');
     }

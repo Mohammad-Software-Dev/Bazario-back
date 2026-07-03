@@ -14,6 +14,8 @@ class ProductController extends Controller
     use ApiResponseTrait;
     public function index()
     {
+        $perPage = max(1, min((int) request('per_page', 20), 50));
+
         $query = Product::with([
             'images:id,product_id,image',
             'category:id,name',
@@ -26,7 +28,7 @@ class ProductController extends Controller
             $query->where('category_id', request('category_id'));
         }
 
-        $products = $query->orderBy('created_at', 'desc')->paginate(20);
+        $products = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return $this->successResponse($products, 'messages', 'products_retrieved_successfully');
     }
