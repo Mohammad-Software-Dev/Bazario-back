@@ -70,7 +70,14 @@ class ServiceController extends Controller
 
     public function servicesByServiceProvider($id)
     {
-        $services = Service::where('provider_id', $id)->with([
+        $perPage = max(1, min((int) request('per_page', 20), 50));
+
+        $serviceProvider = ServiceProvider::query()
+            ->with(['user:id,name,email,phone'])
+            ->select('id', 'user_id', 'name', 'logo', 'address', 'description')
+            ->findOrFail($id);
+
+        $services = Service::where('provider_id', $serviceProvider->id)->with([
             'images:id,service_id,image',
             'category:id,name',
             'serviceProvider.user:id,name,email,phone',
@@ -78,9 +85,16 @@ class ServiceController extends Controller
         ])
             ->select('id', 'title', 'description',  'price',  'category_id', 'provider_id', 'created_at')
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginate($perPage);
 
-        return $this->successResponse($services, 'messages', 'services_retrieved_successfully');
+        return $this->successResponse(
+            [
+                'service_provider' => $serviceProvider,
+                'services' => $services,
+            ],
+            'messages',
+            'services_retrieved_successfully'
+        );
     }
 
     public function store(ServiceRequest $request)

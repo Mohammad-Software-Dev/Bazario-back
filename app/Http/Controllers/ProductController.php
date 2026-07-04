@@ -70,6 +70,8 @@ class ProductController extends Controller
 
     public function productsBySeller($id)
     {
+        $perPage = max(1, min((int) request('per_page', 20), 50));
+
         $seller = Seller::query()
             ->with(['user:id,name,email,phone'])
             ->select('id', 'user_id', 'store_name', 'store_owner_name', 'logo', 'address', 'description')
@@ -84,7 +86,7 @@ class ProductController extends Controller
             ])
             ->select('id', 'name', 'description', 'price', 'category_id', 'seller_id', 'created_at')
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginate($perPage);
 
         return $this->successResponse(
             [
