@@ -8,10 +8,10 @@ use App\Models\Service;
 use App\Models\ServiceProvider;
 use App\Traits\ApiResponseTrait;
 
-
 class ServiceController extends Controller
 {
     use ApiResponseTrait;
+
     public function index()
     {
         $perPage = max(1, min((int) request('per_page', 20), 50));
@@ -31,6 +31,18 @@ class ServiceController extends Controller
         $services = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return $this->successResponse($services, 'messages', 'services_retrieved_successfully');
+    }
+
+    public function show(Service $service)
+    {
+        $service->load([
+            'images:id,service_id,image',
+            'category:id,name',
+            'serviceProvider.user:id,name,email,phone',
+            'serviceProvider:id,user_id,name,logo,address,description',
+        ]);
+
+        return $this->successResponse($service, 'messages', 'services_retrieved_successfully');
     }
 
     public function myServices()

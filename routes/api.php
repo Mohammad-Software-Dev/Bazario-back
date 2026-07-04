@@ -52,6 +52,7 @@ Route::middleware(['set-language', 'throttle:api'])->group(function () {
     Route::get('products', [ProductController::class, 'index']);
     Route::get('products/{product}', [ProductController::class, 'show']);
     Route::get('services', [ServiceController::class, 'index']);
+    Route::get('services/{service}', [ServiceController::class, 'show']);
     Route::get('ads/timed', [AdController::class, 'timedAds']);
 
     Route::get('service_provider/{id}/services', [ServiceController::class, 'servicesByServiceProvider']);
