@@ -34,11 +34,13 @@ class SellerController extends Controller
     public function index()
     {
         try {
+            $perPage = max(1, min((int) request('per_page', 20), 50));
+
             $sellers = Seller::with('user:id,name,email,phone')
                 ->select('id', 'user_id', 'store_owner_name', 'store_name', 'address', 'logo', 'description', 'created_at')
                 ->where('status', 'approved')
                 ->orderBy('created_at', 'desc')
-                ->paginate(20);
+                ->paginate($perPage);
 
 
             return $this->successResponse($sellers, 'auth', 'fetched_successfully');

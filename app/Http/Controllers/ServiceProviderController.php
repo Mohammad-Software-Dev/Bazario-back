@@ -19,11 +19,13 @@ class ServiceProviderController extends Controller
     {
 
         try {
+            $perPage = max(1, min((int) request('per_page', 20), 50));
+
             $service_providers = ServiceProvider::with('user:id,name,email,phone')
                 ->select('id', 'user_id', 'name', 'address', 'logo', 'description', 'created_at')
                 ->where('status', 'approved')
                 ->orderBy('created_at', 'desc')
-                ->paginate(20);
+                ->paginate($perPage);
             return $this->successResponse($service_providers, 'auth', 'fetched_successfully');
         } catch (\Throwable $e) {
 
