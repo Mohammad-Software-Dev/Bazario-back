@@ -4,13 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Staudenmeir\BelongsToThrough\BelongsToThrough;
 
 class Service extends Model
 {
     use HasFactory;
-    // use SoftDeletes;
+
     protected $fillable = [
         'title',
         'description',
@@ -26,8 +25,8 @@ class Service extends Model
         'edit_cutoff_hours',
         'cancel_late_policy',
         'edit_late_policy',
-
     ];
+
     protected $appends = ['isNew'];
     protected $dates = ['created_at'];
     protected $casts = [
@@ -41,20 +40,38 @@ class Service extends Model
 
     public function getIsNewAttribute()
     {
-        if (!$this->created_at) return false;
+        if (!$this->created_at) {
+            return false;
+        }
 
         return $this->created_at->gt(now()->subDays(2));
     }
 
     public function getTitleAttribute($value)
     {
+        $title = is_array($value) ? $value : $this->castAttribute('title', $value);
+
+        if (!is_array($title)) {
+            return null;
+        }
+
         $locale = app()->getLocale();
-        return $this->attributes['title'] = $this->castAttribute('title', $value)[$locale] ?? null;
+        $fallbacks = array_unique([$locale, config('app.fallback_locale'), 'en', 'ar', 'de']);
+
+        foreach ($fallbacks as $fallback) {
+            if (!empty($title[$fallback])) {
+                return $title[$fallback];
+            }
+        }
+
+        return null;
     }
+
     public function user()
     {
         return $this->belongsToThrough(User::class, ServiceProvider::class);
     }
+
     public function category()
     {
         return $this->belongsTo(Category::class);

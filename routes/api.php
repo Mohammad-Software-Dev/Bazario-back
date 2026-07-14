@@ -132,6 +132,8 @@ Route::middleware(['set-language', 'throttle:api'])->group(function () {
             Route::delete('categories/{category}', [CategoryController::class, 'destroy']);
             Route::post('product', [ProductController::class, 'store']);
             Route::post('service', [ServiceController::class, 'store']);
+            Route::put('service/{service}', [ServiceController::class, 'update']);
+            Route::delete('service/{service}', [ServiceController::class, 'destroy']);
             Route::get('my-products', [ProductController::class, 'myProducts']);
             Route::get('my-services', [ServiceController::class, 'myServices']);
         });
