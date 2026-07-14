@@ -27,7 +27,7 @@ class Service extends Model
         'edit_late_policy',
     ];
 
-    protected $appends = ['isNew'];
+    protected $appends = ['isNew', 'title_translations', 'description_translations'];
     protected $dates = ['created_at'];
     protected $casts = [
         'title' => 'array',
@@ -65,6 +65,28 @@ class Service extends Model
         }
 
         return null;
+    }
+
+    public function getTitleTranslationsAttribute()
+    {
+        $title = $this->attributes['title'] ?? null;
+
+        if (is_array($title)) {
+            return $title;
+        }
+
+        return is_string($title) ? json_decode($title, true) : null;
+    }
+
+    public function getDescriptionTranslationsAttribute()
+    {
+        $description = $this->attributes['description'] ?? null;
+
+        if (is_array($description)) {
+            return $description;
+        }
+
+        return is_string($description) ? json_decode($description, true) : null;
     }
 
     public function user()
