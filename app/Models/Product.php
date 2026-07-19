@@ -23,7 +23,7 @@ class Product extends Model
         'description' => 'array',
     ];
 
-    protected $appends = ['isNew'];
+    protected $appends = ['isNew', 'name_translations', 'description_translations'];
     protected $dates = ['created_at'];
 
     public function getIsNewAttribute()
@@ -33,6 +33,20 @@ class Product extends Model
         }
 
         return $this->created_at->gt(now()->subDays(2));
+    }
+
+    public function getNameTranslationsAttribute()
+    {
+        $value = $this->attributes['name'] ?? null;
+
+        return $value === null ? null : $this->castAttribute('name', $value);
+    }
+
+    public function getDescriptionTranslationsAttribute()
+    {
+        $value = $this->attributes['description'] ?? null;
+
+        return $value === null ? null : $this->castAttribute('description', $value);
     }
 
     public function getNameAttribute($value)
