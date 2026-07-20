@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Service;
 use App\Models\ServiceBooking;
 use App\Models\ServiceProvider;
+use App\Models\WalletLedgerEntry;
+use App\Services\StripeRefundService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,10 +49,7 @@ class ServiceBookingController extends Controller
             ], 422);
         }
 
-        // Prefer provider timezone unless client explicitly sends one
         $tz = $data['timezone'] ?? $provider->timezone ?? 'UTC';
-
-        // Convert to UTC for storage
         $startsAtUtc = Carbon::parse($data['starts_at'], $tz)->utc();
         if ($startsAtUtc->lessThanOrEqualTo(Carbon::now('UTC'))) {
             return response()->json([
@@ -58,7 +57,6 @@ class ServiceBookingController extends Controller
             ], 422);
         }
 
-        // Compute end
         if (!empty($data['ends_at'])) {
             $endsAtUtc = Carbon::parse($data['ends_at'], $tz)->utc();
         } else {
@@ -73,16 +71,9 @@ class ServiceBookingController extends Controller
         }
 
         $booking = DB::transaction(function () use ($service, $provider, $providerUserId, $user, $startsAtUtc, $endsAtUtc, $data, $tz) {
-            // Serialize booking attempts per provider to prevent race conditions
             ServiceProvider::whereKey($provider->id)->lockForUpdate()->first();
 
-            $this->assertSlotAvailable(
-                $service,
-                $provider,
-                $startsAtUtc,
-                $endsAtUtc,
-                $tz
-            );
+            $this->assertSlotAvailable($service, $provider, $startsAtUtc, $endsAtUtc, $tz);
 
             return ServiceBooking::create([
                 'order_item_id' => null,
@@ -109,7 +100,7 @@ class ServiceBookingController extends Controller
 
         $bookings = ServiceBooking::query()
             ->where('customer_user_id', $user->id)
-            ->with(['service', 'providerUser'])
+            ->with(['service', 'providerUser', 'orderItem.order.stripePayment', 'orderItem.stripeRefunds'])
             ->orderBy('starts_at')
             ->paginate(20);
 
@@ -122,7 +113,7 @@ class ServiceBookingController extends Controller
 
         $bookings = ServiceBooking::query()
             ->where('provider_user_id', $user->id)
-            ->with(['service', 'customerUser'])
+            ->with(['service', 'customerUser', 'orderItem.order.stripePayment', 'orderItem.stripeRefunds'])
             ->orderBy('starts_at')
             ->paginate(20);
 
@@ -146,7 +137,7 @@ class ServiceBookingController extends Controller
         return response()->json($booking);
     }
 
-    public function cancel(Request $request, ServiceBooking $booking)
+    public function cancel(Request $request, ServiceBooking $booking, StripeRefundService $refunds)
     {
         $user = $request->user();
 
@@ -164,8 +155,9 @@ class ServiceBookingController extends Controller
             ], 422);
         }
 
+        $service = $booking->service()->first();
+
         if ($isCustomer) {
-            $service = $booking->service()->first();
             $cutoff = (int) ($service?->cancel_cutoff_hours ?? 0);
             $latePolicy = (string) ($service?->cancel_late_policy ?? 'deny');
             if (
@@ -179,12 +171,38 @@ class ServiceBookingController extends Controller
             }
         }
 
-        $booking->status = $isProvider ? 'cancelled_by_provider' : 'cancelled_by_customer';
-        $booking->cancelled_at = now();
-        $booking->cancellation_reason = $data['reason'] ?? null;
-        $booking->save();
+        $refund = DB::transaction(function () use ($booking, $data, $isProvider, $refunds) {
+            $booking->status = $isProvider ? 'cancelled_by_provider' : 'cancelled_by_customer';
+            $booking->cancelled_at = now();
+            $booking->cancellation_reason = $data['reason'] ?? null;
+            $booking->save();
 
-        return response()->json($booking);
+            $booking->loadMissing(['orderItem.order.stripePayment', 'orderItem.stripeRefunds']);
+            $order = $booking->orderItem?->order;
+
+            if ($order && in_array($order->status, ['paid', 'partially_refunded'], true)) {
+                return $refunds->refundBookingCancellation(
+                    $booking,
+                    $isProvider ? 'provider_cancellation' : 'customer_cancellation'
+                );
+            }
+
+            return null;
+        });
+
+        $freshBooking = $booking->fresh(['service', 'orderItem.order', 'orderItem.stripeRefunds']);
+        $freshOrder = $freshBooking?->orderItem?->order?->fresh(['stripePayment', 'stripeRefunds']);
+
+        return response()->json([
+            'booking' => $freshBooking,
+            'refund' => [
+                'applied' => (bool) $refund,
+                'amount' => $refund?->amount,
+                'status' => $refund?->status,
+                'stripe_refund_id' => $refund?->stripe_refund_id,
+            ],
+            'order_status' => $freshOrder?->status,
+        ]);
     }
 
     public function complete(Request $request, ServiceBooking $booking)
@@ -198,10 +216,21 @@ class ServiceBookingController extends Controller
             ], 422);
         }
 
-        $booking->status = 'completed';
-        $booking->save();
+        DB::transaction(function () use ($booking) {
+            $booking->status = 'completed';
+            $booking->save();
 
-        return response()->json($booking);
+            if ($booking->order_item_id) {
+                WalletLedgerEntry::query()
+                    ->where('order_item_id', $booking->order_item_id)
+                    ->where('type', 'sale_pending')
+                    ->update([
+                        'available_on' => now(),
+                    ]);
+            }
+        });
+
+        return response()->json($booking->fresh());
     }
 
     public function reschedule(Request $request, ServiceBooking $booking)
@@ -242,7 +271,6 @@ class ServiceBookingController extends Controller
             ], 422);
         }
 
-        // Prefer provider timezone unless client explicitly sends one
         $tz = $data['timezone'] ?? $provider->timezone ?? 'UTC';
         $startsAtUtc = Carbon::parse($data['starts_at'], $tz)->utc();
         if ($startsAtUtc->lessThanOrEqualTo(Carbon::now('UTC'))) {
@@ -321,7 +349,7 @@ class ServiceBookingController extends Controller
         $startLocal = $startsAtUtc->copy()->tz($tz);
         $endLocal = $endsAtUtc->copy()->tz($tz);
 
-        $dow = (int) $startLocal->dayOfWeek; // 0=Sun..6=Sat
+        $dow = (int) $startLocal->dayOfWeek;
         $dayHours = $provider->workingHours->where('day_of_week', $dow);
 
         if ($dayHours->isEmpty()) {

@@ -25,12 +25,8 @@ class PayoutController extends Controller
             ->with(['connectAccount', 'roles'])
             ->get(['id', 'name', 'email']);
 
-        $balances = WalletLedgerEntry::query()
+        $balances = $this->payableLedgerEntriesQuery()
             ->select('user_id', 'currency_iso', DB::raw('SUM(amount) as amount'))
-            ->whereIn('type', self::PAYABLE_LEDGER_TYPES)
-            ->where(function ($q) {
-                $q->whereNull('available_on')->orWhere('available_on', '<=', now());
-            })
             ->groupBy('user_id', 'currency_iso')
             ->get();
 
@@ -161,12 +157,8 @@ class PayoutController extends Controller
     private function reserveTransferBatches(User $user): array
     {
         return DB::transaction(function () use ($user) {
-            $entries = WalletLedgerEntry::query()
+            $entries = $this->payableLedgerEntriesQuery()
                 ->where('user_id', $user->id)
-                ->whereIn('type', self::PAYABLE_LEDGER_TYPES)
-                ->where(function ($q) {
-                    $q->whereNull('available_on')->orWhere('available_on', '<=', now());
-                })
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
@@ -289,5 +281,23 @@ class PayoutController extends Controller
         $entryIds = $groupEntries->pluck('id')->sort()->implode('-');
 
         return 'transfer_' . sha1($userId . '|' . $orderId . '|' . $currencyIso . '|' . $entryIds);
+    }
+
+    private function payableLedgerEntriesQuery()
+    {
+        return WalletLedgerEntry::query()
+            ->whereIn('type', self::PAYABLE_LEDGER_TYPES)
+            ->where(function ($q) {
+                $q->whereNull('available_on')->orWhere('available_on', '<=', now());
+            })
+            ->where(function ($q) {
+                $q->whereNull('order_item_id')
+                    ->orWhereHas('orderItem', function ($itemQuery) {
+                        $itemQuery->whereDoesntHave('serviceBooking')
+                            ->orWhereHas('serviceBooking', function ($bookingQuery) {
+                                $bookingQuery->where('status', 'completed');
+                            });
+                    });
+            });
     }
 }

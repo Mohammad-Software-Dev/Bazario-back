@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Models\OrderItem;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\StripePayment;
 use App\Services\StripeOrderPaymentService;
 use Carbon\Carbon;
@@ -27,7 +27,6 @@ class OrderCheckoutController extends Controller
                 'transfer_group' => $order->transfer_group ?: ('order_' . $order->id),
             ]);
 
-            // Idempotency key prevents duplicate PaymentIntents
             $idempotencyKey = 'pi_' . $order->id;
 
             $pi = $stripe->paymentIntents->create([
@@ -49,12 +48,15 @@ class OrderCheckoutController extends Controller
                     'status' => $pi->status,
                     'amount' => $order->total_amount,
                     'currency_iso' => $order->currency_iso,
+                    'metadata' => $pi instanceof \Stripe\StripeObject ? $pi->toArray() : (array) $pi,
                 ]
             );
 
             return response()->json([
                 'client_secret' => $pi->client_secret,
                 'payment_intent_id' => $pi->id,
+                'order_id' => $order->id,
+                'status' => $order->status,
             ]);
         });
     }
@@ -62,6 +64,7 @@ class OrderCheckoutController extends Controller
     public function createCheckoutSession(Request $request, Order $order, StripeClient $stripe)
     {
         abort_unless($order->buyer_id === $request->user()->id, 403);
+        abort_if(in_array($order->status, ['paid', 'refunded', 'partially_refunded'], true), 422, __('orders.not_payable'));
         abort_if($order->status !== 'draft', 422, __('orders.not_payable'));
         abort_if($order->total_amount <= 0, 422, __('orders.total_invalid'));
 
@@ -106,6 +109,8 @@ class OrderCheckoutController extends Controller
             return response()->json([
                 'checkout_url' => $session->url,
                 'checkout_session_id' => $session->id,
+                'order_id' => $order->id,
+                'status' => $order->status,
             ]);
         });
     }
@@ -136,9 +141,13 @@ class OrderCheckoutController extends Controller
             }
         }
 
-        return response()->json(
-            $order->fresh(['items', 'items.serviceBooking', 'stripePayment'])
-        );
+        $freshOrder = $this->loadOrderForResponse($order->fresh());
+
+        return response()->json([
+            'order' => $freshOrder,
+            'payment' => $freshOrder?->stripePayment,
+            'is_paid' => $freshOrder?->status === 'paid',
+        ]);
     }
 
     private function buildStripeLineItem(OrderItem $item, string $currencyIso): array
@@ -213,5 +222,14 @@ class OrderCheckoutController extends Controller
         }
 
         return rtrim(mb_substr($normalized, 0, $limit - 3)) . '...';
+    }
+
+    private function loadOrderForResponse(?Order $order): ?Order
+    {
+        if (!$order) {
+            return null;
+        }
+
+        return $order->load(['items.serviceBooking', 'items.stripeRefunds', 'stripePayment', 'stripeRefunds']);
     }
 }

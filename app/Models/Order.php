@@ -42,4 +42,9 @@ class Order extends Model
     {
         return $this->hasOne(StripePayment::class);
     }
+
+    public function stripeRefunds()
+    {
+        return $this->hasMany(StripeRefund::class);
+    }
 }

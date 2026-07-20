@@ -3,18 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Listing;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Service;
-use App\Models\Listing;
+use App\Models\ServiceBooking;
 use App\Models\ServiceProvider;
 use App\Models\Setting;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Models\ServiceBooking;
-use Carbon\Carbon;
 
 class OrderController extends Controller
 {
@@ -33,16 +33,14 @@ class OrderController extends Controller
             'total_amount' => 0,
         ]);
 
-        return response()->json($order);
+        return response()->json($this->loadOrderRelations($order));
     }
 
     public function show(Request $request, Order $order)
     {
         abort_unless($order->buyer_id === $request->user()->id, 403);
 
-        return response()->json(
-            $order->load(['items', 'items.serviceBooking'])
-        );
+        return response()->json($this->loadOrderRelations($order));
     }
 
     public function myOrders(Request $request)
@@ -51,7 +49,7 @@ class OrderController extends Controller
 
         $orders = Order::query()
             ->where('buyer_id', $user->id)
-            ->with(['items', 'items.serviceBooking'])
+            ->with(['items.serviceBooking', 'items.stripeRefunds', 'stripePayment', 'stripeRefunds'])
             ->orderByDesc('id')
             ->paginate(20);
 
@@ -63,7 +61,7 @@ class OrderController extends Controller
         $user = $request->user();
 
         $query = OrderItem::query()
-            ->with(['order.buyer', 'serviceBooking'])
+            ->with(['order.buyer', 'serviceBooking', 'stripeRefunds'])
             ->whereHas('order', function ($q) {
                 $q->where('status', 'paid');
             })
@@ -91,8 +89,6 @@ class OrderController extends Controller
             'type' => ['required', 'in:product,service,listing'],
             'id' => ['required', 'integer'],
             'quantity' => ['nullable', 'integer', 'min:1'],
-
-            // service booking fields (required if type=service)
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date'],
             'timezone' => ['nullable', 'string', 'max:64'],
@@ -103,18 +99,16 @@ class OrderController extends Controller
         return DB::transaction(function () use ($order, $data) {
             $feePercent = (float) Setting::getValue('platform_fee_percent', 10);
             $feeRate = max(0, min(100, $feePercent)) / 100;
-            $qty = (int)($data['quantity'] ?? 1);
+            $qty = (int) ($data['quantity'] ?? 1);
 
             if ($data['type'] === 'product') {
                 $product = Product::with('seller')->findOrFail($data['id']);
 
-
                 $payeeUserId = $product->seller->user_id ?? null;
                 abort_if(!$payeeUserId, 422, __('orders.seller_user_missing'));
 
-                $unit = (int) round(((float)$product->price) * 100);
+                $unit = (int) round(((float) $product->price) * 100);
                 $gross = $unit * $qty;
-
                 $fee = (int) round($gross * $feeRate);
                 $net = $gross - $fee;
 
@@ -137,7 +131,7 @@ class OrderController extends Controller
             if ($data['type'] === 'listing') {
                 $listing = Listing::findOrFail($data['id']);
 
-                $unit = (int) round(((float)$listing->price) * 100);
+                $unit = (int) round(((float) $listing->price) * 100);
                 $gross = $unit * $qty;
                 $fee = (int) round($gross * $feeRate);
                 $net = $gross - $fee;
@@ -168,12 +162,7 @@ class OrderController extends Controller
                     abort(422, __('bookings.service_not_active'));
                 }
 
-                // Booking fields required for services
-                abort_if(
-                    empty($data['starts_at']),
-                    422,
-                    __('orders.service_dates_required')
-                );
+                abort_if(empty($data['starts_at']), 422, __('orders.service_dates_required'));
 
                 $provider = ServiceProvider::query()
                     ->whereKey($service->provider_id)
@@ -200,15 +189,9 @@ class OrderController extends Controller
                     abort(422, __('bookings.invalid_time_range'));
                 }
 
-                $this->assertSlotAvailable(
-                    $service,
-                    $provider,
-                    $startsAtUtc,
-                    $endsAtUtc,
-                    $tz
-                );
+                $this->assertSlotAvailable($service, $provider, $startsAtUtc, $endsAtUtc, $tz);
 
-                $unit = (int) round(((float)$service->price) * 100);
+                $unit = (int) round(((float) $service->price) * 100);
                 $gross = $unit;
                 $fee = (int) round($gross * $feeRate);
                 $net = $gross - $fee;
@@ -248,7 +231,7 @@ class OrderController extends Controller
                 'total_amount' => $subtotal,
             ]);
 
-            return response()->json($order->load(['items', 'items.serviceBooking']));
+            return response()->json($this->loadOrderRelations($order->fresh()));
         });
     }
 
@@ -293,7 +276,7 @@ class OrderController extends Controller
         $startLocal = $startsAtUtc->copy()->tz($tz);
         $endLocal = $endsAtUtc->copy()->tz($tz);
 
-        $dow = (int) $startLocal->dayOfWeek; // 0=Sun..6=Sat
+        $dow = (int) $startLocal->dayOfWeek;
         $dayHours = $provider->workingHours->where('day_of_week', $dow);
 
         if ($dayHours->isEmpty()) {
@@ -335,5 +318,10 @@ class OrderController extends Controller
         if ($overlappingCount >= $capacity) {
             abort(422, __('bookings.slot_unavailable'));
         }
+    }
+
+    private function loadOrderRelations(Order $order): Order
+    {
+        return $order->load(['items.serviceBooking', 'items.stripeRefunds', 'stripePayment', 'stripeRefunds']);
     }
 }

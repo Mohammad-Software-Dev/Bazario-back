@@ -18,19 +18,22 @@ class StripeOrderPaymentService
 
         return DB::transaction(function () use ($orderId, $paymentObject) {
             /** @var Order|null $order */
-            $order = Order::with('items')->whereKey($orderId)->lockForUpdate()->first();
+            $order = Order::with(['items', 'items.serviceBooking'])->whereKey($orderId)->lockForUpdate()->first();
             if (!$order) {
                 return null;
             }
+
+            $existingPayment = StripePayment::query()->where('order_id', $order->id)->first();
 
             StripePayment::updateOrCreate(
                 ['order_id' => $order->id],
                 [
                     'payment_intent_id' => (string) ($paymentObject['id'] ?? ('pi_missing_' . $order->id)),
                     'status' => (string) ($paymentObject['status'] ?? 'succeeded'),
-                    'charge_id' => $paymentObject['latest_charge'] ?? null,
+                    'charge_id' => $paymentObject['latest_charge'] ?? $existingPayment?->charge_id,
                     'amount' => (int) ($paymentObject['amount'] ?? $order->total_amount),
                     'currency_iso' => strtoupper((string) ($paymentObject['currency'] ?? $order->currency_iso)),
+                    'metadata' => $paymentObject,
                 ]
             );
 
@@ -49,6 +52,8 @@ class StripeOrderPaymentService
                         continue;
                     }
 
+                    $availableOn = $item->serviceBooking?->ends_at ?? now();
+
                     WalletLedgerEntry::create([
                         'user_id' => $item->payee_user_id,
                         'order_id' => $order->id,
@@ -56,16 +61,18 @@ class StripeOrderPaymentService
                         'type' => 'sale_pending',
                         'amount' => (int) $item->net_amount,
                         'currency_iso' => $order->currency_iso,
+                        'available_on' => $availableOn,
                         'metadata' => [
                             'payment_intent_id' => $paymentObject['id'] ?? null,
                             'gross_amount' => (int) $item->gross_amount,
                             'platform_fee_amount' => (int) $item->platform_fee_amount,
+                            'requires_booking_completion' => (bool) $item->serviceBooking,
                         ],
                     ]);
                 }
             }
 
-            return $order->fresh(['items', 'items.serviceBooking']);
+            return $order->fresh(['items', 'items.serviceBooking', 'stripePayment']);
         });
     }
 
@@ -83,13 +90,17 @@ class StripeOrderPaymentService
                 return null;
             }
 
+            $existingPayment = StripePayment::query()->where('order_id', $order->id)->first();
+
             StripePayment::updateOrCreate(
                 ['order_id' => $order->id],
                 [
                     'payment_intent_id' => (string) ($paymentObject['id'] ?? ('pi_missing_' . $order->id)),
                     'status' => (string) ($paymentObject['status'] ?? 'failed'),
+                    'charge_id' => $paymentObject['latest_charge'] ?? $existingPayment?->charge_id,
                     'amount' => (int) ($paymentObject['amount'] ?? $order->total_amount),
                     'currency_iso' => strtoupper((string) ($paymentObject['currency'] ?? $order->currency_iso)),
+                    'metadata' => $paymentObject,
                 ]
             );
 
@@ -99,7 +110,7 @@ class StripeOrderPaymentService
                 ]);
             }
 
-            return $order->fresh(['items', 'items.serviceBooking']);
+            return $order->fresh(['items', 'items.serviceBooking', 'stripePayment']);
         });
     }
 

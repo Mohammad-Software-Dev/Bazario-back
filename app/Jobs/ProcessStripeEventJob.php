@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\ConnectAccount;
 use App\Models\StripeWebhookEvent;
 use App\Services\StripeOrderPaymentService;
+use App\Services\StripeRefundService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,7 +24,7 @@ class ProcessStripeEventJob implements ShouldQueue
         $this->event = $event;
     }
 
-    public function handle(StripeOrderPaymentService $payments): void
+    public function handle(StripeOrderPaymentService $payments, StripeRefundService $refunds): void
     {
         $eventId = $this->event['id'] ?? null;
         $eventType = $this->event['type'] ?? null;
@@ -32,8 +33,7 @@ class ProcessStripeEventJob implements ShouldQueue
             return;
         }
 
-        DB::transaction(function () use ($eventId, $eventType, $payments) {
-            // Lock event row to avoid double processing in race conditions
+        DB::transaction(function () use ($eventId, $eventType, $payments, $refunds) {
             $row = StripeWebhookEvent::where('event_id', $eventId)->lockForUpdate()->first();
 
             if (!$row || $row->processed_at) {
@@ -45,6 +45,8 @@ class ProcessStripeEventJob implements ShouldQueue
                 'payment_intent.payment_failed' => $this->handlePaymentIntentFailed($payments),
                 'checkout.session.completed' => $this->handleCheckoutSessionCompleted($payments),
                 'account.updated' => $this->handleAccountUpdated(),
+                'refund.updated' => $this->handleRefundUpdated($refunds),
+                'charge.refunded' => $this->handleChargeRefunded($refunds),
                 default => null,
             };
 
@@ -77,6 +79,26 @@ class ProcessStripeEventJob implements ShouldQueue
 
         if (($session['payment_status'] ?? null) === 'paid') {
             $payments->handleSuccessfulPaymentObject($paymentObject);
+        }
+    }
+
+    private function handleRefundUpdated(StripeRefundService $refunds): void
+    {
+        $refund = $this->event['data']['object'] ?? null;
+        if (!$refund) {
+            return;
+        }
+
+        $refunds->syncRefundFromWebhook($refund);
+    }
+
+    private function handleChargeRefunded(StripeRefundService $refunds): void
+    {
+        $charge = $this->event['data']['object'] ?? null;
+        $refundRows = $charge['refunds']['data'] ?? [];
+
+        foreach ($refundRows as $refundRow) {
+            $refunds->syncRefundFromWebhook($refundRow);
         }
     }
 

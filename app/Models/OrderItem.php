@@ -45,4 +45,9 @@ class OrderItem extends Model
     {
         return $this->hasOne(ServiceBooking::class);
     }
+
+    public function stripeRefunds()
+    {
+        return $this->hasMany(StripeRefund::class);
+    }
 }

@@ -42,8 +42,14 @@ class ServiceBooking extends Model
     {
         return $this->belongsTo(User::class, 'provider_user_id');
     }
+
     public function customerUser()
     {
         return $this->belongsTo(User::class, 'customer_user_id');
+    }
+
+    public function stripeRefunds()
+    {
+        return $this->hasMany(StripeRefund::class);
     }
 }
