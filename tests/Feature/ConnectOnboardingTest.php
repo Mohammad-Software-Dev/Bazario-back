@@ -125,7 +125,7 @@ class ConnectOnboardingTest extends TestCase
         ]);
     }
 
-    public function test_seller_connect_onboarding_returns_to_demo_home(): void
+    public function test_seller_connect_onboarding_returns_to_frontend_account_page(): void
     {
         Role::create(['name' => 'seller']);
 
@@ -142,7 +142,7 @@ class ConnectOnboardingTest extends TestCase
         $this->postJson('/api/connect/onboard')->assertStatus(200);
 
         $this->assertSame(
-            rtrim(config('app.url'), '/') . '/demo/index.html?stripe_connect_return=1',
+            rtrim(config('stripe.frontend_url'), '/') . '/account/stripe',
             $capture['account_link_params']['return_url'] ?? null,
         );
     }

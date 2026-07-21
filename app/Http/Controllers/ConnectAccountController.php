@@ -219,19 +219,19 @@ class ConnectAccountController extends Controller
 
     private function resolveAccountLinkUrls($user): array
     {
-        $defaultHome = rtrim(config('app.url'), '/') . '/demo/index.html?stripe_connect_return=1';
-        $defaultUpgrade = rtrim(config('app.url'), '/') . '/demo/upgrade-account.html';
+        $frontendUrl = rtrim((string) (config('stripe.frontend_url') ?: config('app.url')), '/');
+        $defaultAccountUrl = $frontendUrl . '/account/stripe';
 
         if ($user->hasRole('admin')) {
             return [
-                config('stripe.connect_return_url') ?: $defaultHome,
-                config('stripe.connect_refresh_url') ?: $defaultHome,
+                config('stripe.connect_return_url') ?: $defaultAccountUrl,
+                config('stripe.connect_refresh_url') ?: $defaultAccountUrl,
             ];
         }
 
         return [
-            $defaultHome,
-            config('stripe.connect_refresh_url') ?: $defaultUpgrade,
+            config('stripe.connect_return_url') ?: $defaultAccountUrl,
+            config('stripe.connect_refresh_url') ?: $defaultAccountUrl,
         ];
     }
 

@@ -83,9 +83,15 @@ class OrderCheckoutController extends Controller
                 ->values()
                 ->all();
 
-            $successUrl = (config('stripe.checkout_success_url') ?: (config('app.url') . '/demo/order-success.html'))
-                . '?order_id=' . $order->id . '&session_id={CHECKOUT_SESSION_ID}';
-            $cancelUrl = config('stripe.checkout_cancel_url') ?: (config('app.url') . '/demo/cart.html');
+            $successBaseUrl = config('stripe.checkout_success_url') ?: (config('app.url') . '/checkout/success');
+            $cancelBaseUrl = config('stripe.checkout_cancel_url') ?: (config('app.url') . '/checkout/cancel');
+
+            $successUrl = $successBaseUrl
+                . (str_contains($successBaseUrl, '?') ? '&' : '?')
+                . 'order_id=' . $order->id . '&session_id={CHECKOUT_SESSION_ID}';
+            $cancelUrl = $cancelBaseUrl
+                . (str_contains($cancelBaseUrl, '?') ? '&' : '?')
+                . 'order_id=' . $order->id;
 
             $session = $stripe->checkout->sessions->create([
                 'mode' => 'payment',
